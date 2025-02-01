@@ -321,6 +321,12 @@ select option {
     transition: 0s;
 }
 
+a {
+    color: var(--primary-color);
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
 /* Enhanced Downloads Section */
 .downloads {
     text-align: center;
