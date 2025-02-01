@@ -14,27 +14,24 @@ export class TorrentUploader {
     }
 
     initEventListeners() {
-        this.form.addEventListener('submit', (e) => this.handleSubmit(e));
-
         if (this.fileInput) {
-            this.fileInput.addEventListener('change', (e) => {
+            this.fileInput.addEventListener('change', async (e) => {
                 const fileName = e.target.files[0]?.name || 'No file chosen';
                 if (this.fileLabel) {
                     this.fileLabel.textContent = fileName;
                 }
+                await this.handleFileUpload();
             });
         }
     }
 
-    async handleSubmit(e) {
-        e.preventDefault();
+    async handleFileUpload() {
 
-        if (!this.fileInput.files.length) {
-            notifications.error('Please select a torrent file');
-            return;
-        }
+        if (!this.fileInput.files.length) return;
 
-        const formData = new FormData(this.form);
+        const formData = new FormData();
+        formData.append('torrent', this.fileInput.files[0]);
+        formData.append('expirationTime', '1'); // Default to 1 hour
 
         try {
             const response = await fetch('/api/upload/torrent', {
@@ -50,16 +47,12 @@ export class TorrentUploader {
 
             // Set magnet link and expiration in URL input form
             this.urlInput.value = result.magnetUri;
-            document.getElementById('expirationTime').value = this.expirationSelect.value;
+            document.getElementById('expirationTime').value = '1'; // Default to 1 hour
 
-            // Show success message
-            notifications.success('Torrent uploaded successfully! Click Download to start.');
-
-            // Reset form
+            // Reset form and show message
             this.fileInput.value = '';
-            if (this.fileLabel) {
-                this.fileLabel.textContent = 'No file chosen';
-            }
+            this.fileLabel.textContent = 'No file chosen';
+            notifications.success('Torrent converted to magnet link - Click Download to start');
         } catch (error) {
             console.error('Torrent upload error:', error);
             notifications.error('Failed to upload torrent file');

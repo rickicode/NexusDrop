@@ -6,7 +6,8 @@ class TorrentHandler {
     constructor(uploadsDir) {
         this.client = new WebTorrent();
         this.uploadsDir = uploadsDir;
-        this.activeTorrents = new Map(); // Track active torrents
+        this.activeTorrents = new Map(); // Track active torrents by infoHash
+        this.magnetUrls = new Map(); // Track magnet URLs to prevent duplicates
     }
 
     removeTorrent(infoHash) {
@@ -14,20 +15,35 @@ class TorrentHandler {
         if (existing) {
             existing.destroy();
             this.activeTorrents.delete(infoHash);
+            // Find and remove the magnet URL associated with this infoHash
+            for (const [magnetUrl, hash] of this.magnetUrls.entries()) {
+                if (hash === infoHash) {
+                    this.magnetUrls.delete(magnetUrl);
+                    break;
+                }
+            }
         }
     }
 
     async startDownload(download, onProgress) {
         try {
             const filePath = path.join(this.uploadsDir, download.filename);
-            // Remove existing torrent if any
-            const infoHash = this.client.get(download.originalUrl)?.infoHash;
-            if (infoHash) {
-                this.removeTorrent(infoHash);
+
+            // Check if this magnet URL is already being downloaded
+            const existingInfoHash = this.magnetUrls.get(download.originalUrl);
+            const existingTorrent = existingInfoHash ? this.activeTorrents.get(existingInfoHash) : null;
+
+            // Remove existing torrent if it exists
+            if (existingInfoHash) {
+                this.removeTorrent(existingInfoHash);
             }
+
+            // Clear any existing mapping for this magnet URL
+            this.magnetUrls.delete(download.originalUrl);
 
             const torrent = this.client.add(download.originalUrl, { path: this.uploadsDir });
             this.activeTorrents.set(torrent.infoHash, torrent);
+            this.magnetUrls.set(download.originalUrl, torrent.infoHash);
 
             torrent.on('download', () => {
                 if (onProgress) {

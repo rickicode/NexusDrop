@@ -88,8 +88,46 @@ try {
     console.error('Error loading download states:', error);
 }
 
-// Run initial cleanup for expired downloads
+// Cleanup orphaned files and expired downloads on startup
+cleanupOrphanedFiles();
 cleanupExpiredFiles();
+
+// Function to cleanup orphaned files
+function cleanupOrphanedFiles() {
+    const checkDirectory = (dir) => {
+        if (!fs.existsSync(dir)) return;
+
+        const files = fs.readdirSync(dir);
+        files.forEach(file => {
+            const filePath = path.join(dir, file);
+            if (fs.statSync(filePath).isDirectory()) {
+                // Recursively check directories
+                checkDirectory(filePath);
+                // Remove empty directories
+                if (fs.readdirSync(filePath).length === 0) {
+                    fs.rmdirSync(filePath);
+                }
+            } else {
+                // Check if file exists in downloads map
+                const fileExists = Array.from(downloads.values()).some(
+                    download => download.filename === file
+                );
+                if (!fileExists) {
+                    try {
+                        fs.unlinkSync(filePath);
+                        console.log(`Removed orphaned file: ${file}`);
+                    } catch (error) {
+                        console.error(`Error removing orphaned file ${file}:`, error);
+                    }
+                }
+            }
+        });
+    };
+
+    // Check both download directories
+    checkDirectory(downloadsDir);
+    checkDirectory(torrentsDir);
+}
 
 // Save download states periodically
 setInterval(() => {

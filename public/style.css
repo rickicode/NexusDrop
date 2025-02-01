@@ -133,7 +133,7 @@ option {
     gap: 0.5rem;
     background: var(--primary-light);
     color: white;
-    padding: 0.75rem 1.5rem;
+    padding: 0.4rem 1rem;
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.3s ease;
@@ -384,15 +384,20 @@ a:visited {
 .downloads {
     text-align: center;
     width: 100%;
-    padding: 1rem 0;
+    max-width: 600px;
+    background: var(--card-background);
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: var(--elevation-3);
+    margin: 0 auto;
 }
 
 .downloads-list {
-    margin: 1.5rem auto;
+    margin: 1.5rem auto 0;
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    max-width: 95%;
+    width: 100%;
 }
 
 .download-item {
@@ -552,6 +557,19 @@ a:visited {
     transform: scale(0, 0);
     opacity: 0.3;
     transition: 0s;
+}
+
+/* File Icons */
+.url {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.url i {
+    color: var(--primary-color);
+    width: 1.2em;
+    text-align: center;
 }
 
 /* Footer */

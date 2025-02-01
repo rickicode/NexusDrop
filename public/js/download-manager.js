@@ -163,6 +163,41 @@ export class DownloadManager {
         }
     }
 
+    getFileIcon(filename) {
+        const ext = filename.split('.').pop().toLowerCase();
+        const icons = {
+            // Video
+            mp4: 'fas fa-video',
+            webm: 'fas fa-video',
+            mkv: 'fas fa-video',
+            // Audio
+            mp3: 'fas fa-music',
+            wav: 'fas fa-music',
+            // Images
+            jpg: 'fas fa-image',
+            jpeg: 'fas fa-image',
+            png: 'fas fa-image',
+            gif: 'fas fa-image',
+            // Documents
+            pdf: 'fas fa-file-pdf',
+            doc: 'fas fa-file-word',
+            docx: 'fas fa-file-word',
+            txt: 'fas fa-file-alt',
+            // Archives
+            zip: 'fas fa-file-archive',
+            rar: 'fas fa-file-archive',
+            '7z': 'fas fa-file-archive',
+            // Code
+            js: 'fas fa-file-code',
+            css: 'fas fa-file-code',
+            html: 'fas fa-file-code',
+            // Default
+            default: 'fas fa-file'
+        };
+
+        return icons[ext] || icons.default;
+    }
+
     renderDownloadActions(download, isOwner) {
         let actions = '';
 
@@ -263,6 +298,7 @@ export class DownloadManager {
             item.innerHTML = `
                 <div class="url">
                     ${torrentBadge}
+                    <i class="${this.getFileIcon(download.originalFilename)}"></i>
                     <a href="${download.url}" target="_blank">${download.originalFilename}</a>
                 </div>
                 <div class="status">
