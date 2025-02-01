@@ -118,6 +118,11 @@ app.delete('/api/downloads/:id', (req, res) => {
 
 function transformToMirrorUrl(originalUrl) {
     try {
+        // If URL is already using get.0ms.dev, return it as is
+        if (originalUrl.includes('get.0ms.dev')) {
+            return originalUrl;
+        }
+
         const urlObj = new URL(originalUrl);
         // Remove protocol (http:// or https://) and use the rest of the URL
         const pathWithHost = urlObj.host + urlObj.pathname + urlObj.search;
