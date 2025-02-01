@@ -10,14 +10,32 @@ NexusDrop adalah aplikasi pengakselerasi unduhan berkecepatan tinggi yang memanf
 - **Antarmuka Responsif:** Tampilan antarmuka yang modern dengan visual partikel layaknya awan.
 - **Open Source:** Mudah untuk diinstal dan dikembangkan lebih lanjut.
 
-## Instalasi
+## Opsi Deployment
 
-### Prasyarat
+### 1. Instalasi Lokal
+
+#### Prasyarat
 
 - [Node.js](https://nodejs.org/) (disarankan versi 14 atau lebih tinggi)
 - [npm](https://www.npmjs.com/)
 
-### Langkah-langkah
+#### Langkah-langkah
+
+### 2. Deploy ke Vercel
+
+Anda dapat mendeploy aplikasi ini langsung ke Vercel dengan beberapa klik saja:
+
+1. Fork repository ini ke akun GitHub Anda
+2. Kunjungi [Vercel](https://vercel.com)
+3. Klik "Import Project"
+4. Pilih "Import Git Repository" dan pilih repository yang sudah Anda fork
+5. Klik "Deploy"
+
+Aplikasi akan dikonfigurasi dan dideploy secara otomatis. Vercel akan memberikan URL langsung untuk aplikasi Anda.
+
+Catatan: Ketika dideploy ke Vercel, file akan disimpan sementara di `/tmp` dan akan dibersihkan secara otomatis oleh platform. Ini ideal untuk berbagi file jangka pendek.
+
+### Pengembangan Lokal
 
 1. **Clone Repository:**
 

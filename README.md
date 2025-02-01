@@ -10,14 +10,32 @@ NexusDrop is a high-speed download accelerator that leverages mirror servers to 
 - **Responsive UI:** A sleek user interface with cloud-like particle visuals.
 - **Open Source:** Easy to set up and extend.
 
-## Installation
+## Deployment Options
 
-### Prerequisites
+### 1. Local Installation
+
+#### Prerequisites
 
 - [Node.js](https://nodejs.org/) (version 14 or above recommended)
 - [npm](https://www.npmjs.com/)
 
-### Steps
+#### Steps
+
+### 2. Deploy to Vercel
+
+You can deploy this application directly to Vercel with just a few clicks:
+
+1. Fork this repository to your GitHub account
+2. Go to [Vercel](https://vercel.com)
+3. Click "Import Project"
+4. Select "Import Git Repository" and choose your forked repository
+5. Click "Deploy"
+
+The application will be automatically configured and deployed. Vercel will provide you with a live URL for your application.
+
+Note: When deployed to Vercel, files are temporarily stored in `/tmp` and will be automatically cleaned up by the platform. This is ideal for short-term file sharing.
+
+### Local Development
 
 1. **Clone the Repository:**
 
