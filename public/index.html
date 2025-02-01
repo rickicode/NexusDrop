@@ -1,17 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NexusDrop - Accelerate Your Downloads</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- unpkg : use the latest version of Video.js -->
+    <link href="https://unpkg.com/video.js/dist/video-js.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/video.js/dist/video.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
-    <link rel="icon" href="https://res.cloudinary.com/hijitoko/image/upload/v1691772752/netq/favicon/favicon.ico" type="image/x-icon">
+    <link rel="icon" href="https://res.cloudinary.com/hijitoko/image/upload/v1691772752/netq/favicon/favicon.ico"
+        type="image/x-icon">
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2091440645285930"
-     crossorigin="anonymous"></script>
+        crossorigin="anonymous"></script>
 </head>
+
 <body class="dark-theme">
     <div class="container">
         <div class="card">
@@ -19,18 +25,16 @@
                 <h1>NexusDrop</h1>
                 <p class="tagline">Accelerate Your Downloads Through Our High-Speed Servers</p>
                 <div class="description">
-                    <p>Experience faster downloads with NexusDrop's cloud acceleration technology. When your internet connection is slow, our powerful servers download your files first and then deliver them to you at maximum speed. Perfect solution for slow networks, large files, and efficient server-to-server transfers.</p>
+                    <p>Experience faster downloads with NexusDrop's cloud acceleration technology. When your internet
+                        connection is slow, our powerful servers download your files first and then deliver them to you
+                        at maximum speed. Perfect solution for slow networks, large files, and efficient
+                        server-to-server transfers.</p>
                 </div>
             </div>
-            
+
             <form id="downloadForm" class="form">
                 <div class="input-group">
-                    <input 
-                        type="url" 
-                        id="urlInput" 
-                        placeholder="Enter URL to download"
-                        required
-                    >
+                    <input type="url" id="urlInput" placeholder="Enter URL to download" required>
                     <select id="expirationTime" class="select-expiry">
                         <option value="1" selected>1 hour</option>
                         <option value="6">6 hours</option>
@@ -57,8 +61,22 @@
         </footer>
     </div>
 
+    <!-- Video Modal -->
+    <div id="videoModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <video id="videoPlayer" class="video-js vjs-default-skin">
+                <p class="vjs-no-js">
+                    To view this video please enable JavaScript, and consider upgrading to a web browser that supports
+                    HTML5 video
+                </p>
+            </video>
+        </div>
+    </div>
+
     <div id="particles-js"></div>
     <script src="partikel.js"></script>
     <script src="script.js"></script>
 </body>
+
 </html>

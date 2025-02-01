@@ -8,6 +8,7 @@ class DownloadManager {
         this.ownedDownloads = new Map(JSON.parse(localStorage.getItem('ownedDownloads') || '[]'));
         this.previousProgress = new Map();
         this.lastUpdateTime = new Map();
+        this.videoPlayer = null;
 
         this.initEventListeners();
         this.loadDownloads();
@@ -90,85 +91,6 @@ class DownloadManager {
         return `${minutes} minutes left`;
     }
 
-    renderDownloads() {
-        this.downloadsList.innerHTML = '';
-
-        if (this.downloads.size === 0) {
-            this.downloadsList.innerHTML = '<p class="text-center">No downloads yet</p>';
-            return;
-        }
-
-        const now = Date.now();
-        const sortedDownloads = Array.from(this.downloads.values())
-            .filter(download => download.expiresAt > now)
-            .sort((a, b) => b.createdAt - a.createdAt);
-
-        sortedDownloads.forEach(download => {
-            const item = document.createElement('div');
-            item.className = 'download-item';
-            item.dataset.id = download.id;
-
-            const statusClass = {
-                pending: 'status-pending',
-                downloading: 'status-pending',
-                completed: 'status-success',
-                error: 'status-error'
-            }[download.state];
-
-            let statusText = {
-                pending: 'Pending...',
-                downloading: `Downloading (${download.progress}%)`,
-                completed: 'Completed',
-                error: download.error || 'Failed'
-            }[download.state];
-
-            // Add speed information if downloading
-            if (download.state === 'downloading' && download.speed !== undefined) {
-                // Convert bytes/s to MB/s with 2 decimal places
-                const speedMBps = (download.speed / (1024 * 1024)).toFixed(2);
-                statusText += ` - ${speedMBps} MB/s`;
-            }
-
-            const isOwner = this.ownedDownloads.has(download.id);
-            const timeLeft = this.formatTimeLeft(download.expiresAt);
-
-            item.innerHTML = `
-                <div class="url"><a href="${download.url}" target="_blank">${download.originalFilename}</a></div>
-                <div class="status">
-                    ${download.state === 'downloading' ?
-                    `<div class="download-progress">
-                            <div class="progress-bar" style="width: ${download.progress}%"></div>
-                        </div>` : ''}
-                    <span class="status-text ${statusClass}">
-                        ${download.state === 'downloading' ? `<span class="loading-spinner"></span>` : ''}
-                        ${statusText}
-                    </span>
-                </div>
-                <div class="download-meta">
-                    <div class="download-actions">
-                        ${download.state === 'completed' ?
-                    `<a href="/downloads/${download.filename}" class="btn btn-small" download>
-                                <i class="fas fa-download"></i> Download
-                            </a>` : ''}
-                        ${download.state === 'error' && isOwner && download.retryCount >= 7 ?
-                    `<button class="btn btn-small btn-retry" data-action="retry">
-                                <i class="fas fa-redo"></i> Retry (Auto-retry failed)
-                            </button>` : ''}
-                        ${isOwner ?
-                    `<button class="btn btn-small btn-delete" data-action="delete">
-                                <i class="fas fa-trash"></i> Delete
-                            </button>` : ''}
-                    </div>
-                    <div class="expires-at">
-                        <i class="fas fa-clock"></i> ${timeLeft}
-                    </div>
-                </div>
-            `;
-
-            this.downloadsList.appendChild(item);
-        });
-    }
-
     async handleSubmit(e) {
         e.preventDefault();
         const url = this.urlInput.value.trim();
@@ -211,7 +133,13 @@ class DownloadManager {
         const { action } = button.dataset;
         const downloadItem = button.closest('.download-item');
         const { id } = downloadItem.dataset;
+        const download = this.downloads.get(id);
         const ownerId = this.ownedDownloads.get(id);
+
+        if (button.dataset.action === 'play') {
+            this.openVideoPlayer(download);
+            return;
+        }
 
         if (!ownerId) return;
 
@@ -245,6 +173,168 @@ class DownloadManager {
             console.error('Action failed:', error);
             notifications.error(`Failed to ${action} download. Please try again.`);
         }
+    }
+
+    isVideoFile(filename) {
+        const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv'];
+        return videoExtensions.some(ext => filename.toLowerCase().endsWith(ext));
+    }
+
+    openVideoPlayer(download) {
+        const modal = document.getElementById('videoModal');
+        const closeBtn = modal.querySelector('.close');
+        const videoElement = document.getElementById('videoPlayer');
+
+        // Reset video player if it exists
+        if (this.videoPlayer) {
+            this.videoPlayer.dispose();
+        }
+
+        // Initialize video.js
+        this.videoPlayer = videojs('videoPlayer', {
+            controls: true,
+            autoplay: false,
+            preload: 'auto',
+            fluid: true,
+            aspectRatio: '16:9'
+        });
+
+        // Set video source based on download state
+        this.videoPlayer.src({
+            type: 'video/mp4', // Default to mp4, browser will handle other formats
+            src: download.state === 'completed' ? `/downloads/${download.filename}` : download.url
+        });
+
+        // Show modal
+        modal.style.display = 'block';
+
+        // Close modal event
+        const closeModal = () => {
+            modal.style.display = 'none';
+            if (this.videoPlayer) {
+                this.videoPlayer.pause();
+            }
+        };
+
+        closeBtn.onclick = closeModal;
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        };
+
+        // Handle ESC key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+    }
+
+    renderDownloadActions(download, isOwner) {
+        let actions = '';
+
+        // Show play button for video files in any state
+        if (this.isVideoFile(download.originalFilename)) {
+            actions += `
+                <button class="btn btn-small" data-action="play">
+                    <i class="fas fa-play"></i> Play
+                </button>
+            `;
+        }
+
+        // Show download button only when completed
+        if (download.state === 'completed') {
+            actions += `
+                <a href="/downloads/${download.filename}" class="btn btn-small" download>
+                    <i class="fas fa-download"></i> Download
+                </a>
+            `;
+        }
+
+        if (download.state === 'error' && isOwner && download.retryCount >= 7) {
+            actions += `
+                <button class="btn btn-small btn-retry" data-action="retry">
+                    <i class="fas fa-redo"></i> Retry (Auto-retry failed)
+                </button>
+            `;
+        }
+
+        if (isOwner) {
+            actions += `
+                <button class="btn btn-small btn-delete" data-action="delete">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+            `;
+        }
+
+        return actions;
+    }
+
+    renderDownloads() {
+        this.downloadsList.innerHTML = '';
+
+        if (this.downloads.size === 0) {
+            this.downloadsList.innerHTML = '<p class="text-center">No downloads yet</p>';
+            return;
+        }
+
+        const now = Date.now();
+        const sortedDownloads = Array.from(this.downloads.values())
+            .filter(download => download.expiresAt > now)
+            .sort((a, b) => b.createdAt - a.createdAt);
+
+        sortedDownloads.forEach(download => {
+            const item = document.createElement('div');
+            item.className = 'download-item';
+            item.dataset.id = download.id;
+
+            const statusClass = {
+                pending: 'status-pending',
+                downloading: 'status-pending',
+                completed: 'status-success',
+                error: 'status-error'
+            }[download.state];
+
+            let statusText = {
+                pending: 'Pending...',
+                downloading: `Downloading (${download.progress}%)`,
+                completed: 'Completed',
+                error: download.error || 'Failed'
+            }[download.state];
+
+            if (download.state === 'downloading' && download.speed !== undefined) {
+                const speedMBps = (download.speed / (1024 * 1024)).toFixed(2);
+                statusText += ` - ${speedMBps} MB/s`;
+            }
+
+            const isOwner = this.ownedDownloads.has(download.id);
+            const timeLeft = this.formatTimeLeft(download.expiresAt);
+
+            item.innerHTML = `
+                <div class="url"><a href="${download.url}" target="_blank">${download.originalFilename}</a></div>
+                <div class="status">
+                    ${download.state === 'downloading' ?
+                    `<div class="download-progress">
+                            <div class="progress-bar" style="width: ${download.progress}%"></div>
+                        </div>` : ''}
+                    <span class="status-text ${statusClass}">
+                        ${download.state === 'downloading' ? `<span class="loading-spinner"></span>` : ''}
+                        ${statusText}
+                    </span>
+                </div>
+                <div class="download-meta">
+                    <div class="download-actions">
+                        ${this.renderDownloadActions(download, isOwner)}
+                    </div>
+                    <div class="expires-at">
+                        <i class="fas fa-clock"></i> ${timeLeft}
+                    </div>
+                </div>
+            `;
+
+            this.downloadsList.appendChild(item);
+        });
     }
 }
 
