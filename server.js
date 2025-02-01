@@ -250,14 +250,9 @@ app.post('/api/download', async (req, res) => {
 
         // Generate timestamp-based prefix
         const now = new Date();
-        const timestamp = now.toLocaleString('id-ID', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false
-        }).replace(/:/g, '');
+        const randomText = Math.random().toString(36).substring(2, 6).toUpperCase();
 
-        const filename = `NexusDrop_${timestamp}-${originalFilename}`;
+        const filename = `NexusDrop_${randomText}-${originalFilename}`;
         const expiresAt = Date.now() + (hours * 60 * 60 * 1000);
         const ownerId = crypto.randomBytes(16).toString('hex');
 
