@@ -122,7 +122,7 @@ class DownloadManager {
             const timeLeft = this.formatTimeLeft(download.expiresAt);
 
             item.innerHTML = `
-                <div class="url">${download.url}</div>
+                <div class="url"><a href="${download.url}" target="_blank">${download.url}</a></div>
                 <div class="status">
                     ${download.state === 'downloading' ?
                     `<div class="download-progress">
