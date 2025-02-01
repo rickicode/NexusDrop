@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusDrop - Accelerate Your Downloads</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+    <link rel="icon" href="https://res.cloudinary.com/hijitoko/image/upload/v1691772752/netq/favicon/favicon.ico" type="image/x-icon">
+</head>
+<body class="dark-theme">
+    <div class="container">
+        <div class="card">
+            <div class="card-header">
+                <h1>NexusDrop</h1>
+                <p class="tagline">Accelerate Your Downloads Through Our High-Speed Servers</p>
+                <div class="description">
+                    <p>Experience faster downloads with NexusDrop's cloud acceleration technology. When your internet connection is slow, our powerful servers download your files first and then deliver them to you at maximum speed. Perfect solution for slow networks, large files, and efficient server-to-server transfers.</p>
+                </div>
+            </div>
+            
+            <form id="downloadForm" class="form">
+                <div class="input-group">
+                    <input 
+                        type="url" 
+                        id="urlInput" 
+                        placeholder="Enter URL to download"
+                        required
+                    >
+                    <select id="expirationTime" class="select-expiry">
+                        <option value="1" selected>1 hour</option>
+                        <option value="6">6 hours</option>
+                        <option value="24">1 day</option>
+                        <option value="48">2 days</option>
+                        <option value="72">3 days</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn ripple">
+                    <i class="fas fa-download"></i> Download
+                </button>
+            </form>
+
+            <div id="downloads" class="downloads">
+                <h2>Downloads</h2>
+                <div id="downloadsList" class="downloads-list">
+                    <!-- Downloads will be added here dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Powered by <a href="https://netq.me" target="_blank" rel="noopener">NETQ.ME</a></p>
+            <p>&copy; 2024 HIJILABS. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <div id="particles-js"></div>
+    <script src="partikel.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
