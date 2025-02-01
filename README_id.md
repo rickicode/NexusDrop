@@ -21,19 +21,21 @@ NexusDrop adalah aplikasi pengakselerasi unduhan berkecepatan tinggi yang memanf
 
 #### Langkah-langkah
 
-### 2. Deploy ke Vercel
+### 2. Deployment Cloud (Dalam Pengembangan)
 
-Anda dapat mendeploy aplikasi ini langsung ke Vercel dengan beberapa klik saja:
+Untuk mendeploy aplikasi ini ke platform cloud seperti Vercel, diperlukan konfigurasi tambahan:
 
-1. Fork repository ini ke akun GitHub Anda
-2. Kunjungi [Vercel](https://vercel.com)
-3. Klik "Import Project"
-4. Pilih "Import Git Repository" dan pilih repository yang sudah Anda fork
-5. Klik "Deploy"
+**Perubahan yang Diperlukan untuk Deployment Cloud:**
+1. Integrasi dengan layanan penyimpanan cloud (contoh: AWS S3, Google Cloud Storage)
+2. Database untuk menyimpan status unduhan (contoh: MongoDB Atlas, Supabase)
+3. Konfigurasi environment untuk layanan cloud
 
-Aplikasi akan dikonfigurasi dan dideploy secara otomatis. Vercel akan memberikan URL langsung untuk aplikasi Anda.
+Status: Dukungan deployment cloud sedang dalam pengembangan. Untuk saat ini, silakan gunakan metode instalasi lokal.
 
-Catatan: Ketika dideploy ke Vercel, file akan disimpan sementara di `/tmp` dan akan dibersihkan secara otomatis oleh platform. Ini ideal untuk berbagi file jangka pendek.
+**Solusi Penyimpanan yang Direncanakan:**
+- Penyimpanan File: AWS S3 atau layanan penyimpanan objek serupa
+- Manajemen Status: MongoDB Atlas atau layanan database serupa
+- Variabel Environment: Konfigurasi spesifik platform cloud
 
 ### Pengembangan Lokal
 

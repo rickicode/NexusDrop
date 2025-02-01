@@ -13,17 +13,13 @@ const app = express();
 const port = 3001;
 
 // Create necessary directories
-const uploadsDir = process.env.VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
-const dataDir = process.env.VERCEL ? '/tmp/data' : path.join(__dirname, 'data');
-
-// Create directories if not in Vercel environment
-if (!process.env.VERCEL) {
-    [uploadsDir, dataDir].forEach(dir => {
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir);
-        }
-    });
-}
+const uploadsDir = path.join(__dirname, 'uploads');
+const dataDir = path.join(__dirname, 'data');
+[uploadsDir, dataDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir);
+    }
+});
 
 // Middleware
 app.use(express.json());
@@ -52,18 +48,15 @@ try {
     console.error('Error loading download states:', error);
 }
 
-// Save download states and run cleanup only in non-Vercel environment
-if (!process.env.VERCEL) {
-    // Save download states periodically
-    setInterval(() => {
-        const data = Object.fromEntries(downloads);
-        fs.writeFileSync(stateFile, JSON.stringify(data, null, 2));
-    }, 5000);
+// Save download states periodically
+setInterval(() => {
+    const data = Object.fromEntries(downloads);
+    fs.writeFileSync(stateFile, JSON.stringify(data, null, 2));
+}, 5000);
 
-    // Cleanup jobs
-    schedule.scheduleJob('*/1 * * * *', cleanupStuckDownloads);  // Every minute
-    schedule.scheduleJob('0 0 * * *', cleanupExpiredFiles);      // Every day at midnight
-}
+// Cleanup jobs
+schedule.scheduleJob('*/1 * * * *', cleanupStuckDownloads);  // Every minute
+schedule.scheduleJob('0 0 * * *', cleanupExpiredFiles);      // Every day at midnight
 
 function cleanupStuckDownloads() {
     const now = Date.now();

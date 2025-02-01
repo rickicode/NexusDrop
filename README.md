@@ -21,19 +21,21 @@ NexusDrop is a high-speed download accelerator that leverages mirror servers to 
 
 #### Steps
 
-### 2. Deploy to Vercel
+### 2. Cloud Deployment (Work in Progress)
 
-You can deploy this application directly to Vercel with just a few clicks:
+To deploy this application to cloud platforms like Vercel, additional configuration is required:
 
-1. Fork this repository to your GitHub account
-2. Go to [Vercel](https://vercel.com)
-3. Click "Import Project"
-4. Select "Import Git Repository" and choose your forked repository
-5. Click "Deploy"
+**Required Changes for Cloud Deployment:**
+1. Integration with cloud storage service (e.g., AWS S3, Google Cloud Storage)
+2. Database for storing download states (e.g., MongoDB Atlas, Supabase)
+3. Environment configuration for cloud services
 
-The application will be automatically configured and deployed. Vercel will provide you with a live URL for your application.
+Status: Cloud deployment support is currently under development. For now, please use the local installation method.
 
-Note: When deployed to Vercel, files are temporarily stored in `/tmp` and will be automatically cleaned up by the platform. This is ideal for short-term file sharing.
+**Planned Storage Solutions:**
+- File Storage: AWS S3 or similar object storage
+- State Management: MongoDB Atlas or similar database service
+- Environment Variables: Cloud platform specific configuration
 
 ### Local Development
 
