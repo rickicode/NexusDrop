@@ -26,25 +26,6 @@ class DownloadManager {
 
             this.downloads.clear();
             Object.entries(data).forEach(([id, download]) => {
-                // Calculate download speed if downloading
-                if (download.state === 'downloading') {
-                    const prevProgress = this.previousProgress.get(id) || 0;
-                    const lastUpdate = this.lastUpdateTime.get(id) || Date.now();
-                    const timeDiff = (Date.now() - lastUpdate) / 1000; // Convert to seconds
-
-                    if (timeDiff > 0) {
-                        const progressDiff = download.progress - prevProgress;
-                        download.speed = Math.round((progressDiff / timeDiff) * 100) / 100; // % per second
-                    }
-
-                    this.previousProgress.set(id, download.progress);
-                    this.lastUpdateTime.set(id, Date.now());
-                } else {
-                    // Clean up tracking for completed/failed downloads
-                    this.previousProgress.delete(id);
-                    this.lastUpdateTime.delete(id);
-                }
-
                 this.downloads.set(id, download);
 
                 // Show notifications for state changes
@@ -132,7 +113,9 @@ class DownloadManager {
 
             // Add speed information if downloading
             if (download.state === 'downloading' && download.speed !== undefined) {
-                statusText += ` - ${download.speed}%/s`;
+                // Convert bytes/s to MB/s with 2 decimal places
+                const speedMBps = (download.speed / (1024 * 1024)).toFixed(2);
+                statusText += ` - ${speedMBps} MB/s`;
             }
 
             const isOwner = this.ownedDownloads.has(download.id);
@@ -153,7 +136,7 @@ class DownloadManager {
                 <div class="download-meta">
                     <div class="download-actions">
                         ${download.state === 'completed' ?
-                    `<a href="${download.url}" class="btn btn-small" download>
+                    `<a href="/downloads/${download.filename}" class="btn btn-small" download>
                                 <i class="fas fa-download"></i> Download
                             </a>` : ''}
                         ${download.state === 'error' && isOwner ?

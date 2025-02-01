@@ -35,6 +35,9 @@ const DOWNLOAD_STATES = {
     ERROR: 'error'
 };
 
+// Configure downloads URL prefix
+const DOWNLOADS_BASE_URL = '/downloads/';
+
 // Load saved download states
 const stateFile = path.join(dataDir, 'downloads.json');
 try {
@@ -158,6 +161,8 @@ async function startDownload(id, url) {
 
         const totalSize = parseInt(response.headers['content-length'], 10);
         let downloadedSize = 0;
+        let lastTime = Date.now();
+        let lastSize = 0;
 
         const writer = fs.createWriteStream(path.join(uploadsDir, download.filename));
         response.data.pipe(writer);
@@ -165,6 +170,16 @@ async function startDownload(id, url) {
         response.data.on('data', (chunk) => {
             downloadedSize += chunk.length;
             download.progress = Math.round((downloadedSize * 100) / totalSize);
+
+            // Calculate speed in bytes per second
+            const now = Date.now();
+            const timeDiff = (now - lastTime) / 1000; // Convert to seconds
+            if (timeDiff >= 1) { // Update speed every second
+                const sizeDiff = downloadedSize - lastSize;
+                download.speed = Math.round(sizeDiff / timeDiff); // bytes per second
+                lastTime = now;
+                lastSize = downloadedSize;
+            }
         });
 
         await new Promise((resolve, reject) => {
@@ -249,6 +264,7 @@ app.post('/api/download', async (req, res) => {
         downloads.set(id, {
             id,
             url: transformToMirrorUrl(url),
+            originalUrl: url,
             filename,
             originalFilename,
             state: DOWNLOAD_STATES.PENDING,
@@ -256,7 +272,8 @@ app.post('/api/download', async (req, res) => {
             createdAt: Date.now(),
             expiresAt,
             error: null,
-            ownerId
+            ownerId,
+            downloadUrl: DOWNLOADS_BASE_URL + filename
         });
 
         // Start download process
