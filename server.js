@@ -1,11 +1,13 @@
 import express from 'express';
-import axios from 'axios';
 import path from 'path';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import crypto from 'crypto';
 import schedule from 'node-schedule';
+import multer from 'multer';
 import { fileURLToPath } from 'url';
+import HttpHandler from './handlers/http-handler.js';
+import TorrentHandler from './handlers/torrent-handler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,19 +18,48 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Create necessary directories
-const uploadsDir = path.join(__dirname, 'uploads');
+// Get download paths from environment variables or use defaults
+const downloadsDir = process.env.PATH_DOWNLOAD || path.join(__dirname, 'uploads');
+const torrentsDir = process.env.PATH_TORRENT || path.join(__dirname, 'uploads');
 const dataDir = path.join(__dirname, 'data');
-[uploadsDir, dataDir].forEach(dir => {
+
+// Create necessary directories
+[downloadsDir, torrentsDir, dataDir].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir);
     }
 });
 
+// Configure multer for torrent file uploads
+const upload = multer({
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+        // Accept only .torrent files
+        if (!file.originalname.endsWith('.torrent')) {
+            return cb(new Error('Only .torrent files are allowed'));
+        }
+        cb(null, true);
+    }
+});
+
+// Initialize handlers with appropriate directories
+const httpHandler = new HttpHandler(downloadsDir);
+const torrentHandler = new TorrentHandler(torrentsDir);
+
 // Middleware
+app.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        return res.status(400).json({ error: 'File upload error' });
+    } else if (err) {
+        return res.status(400).json({ error: err.message });
+    }
+    next();
+});
 app.use(express.json());
 app.use(express.static('public'));
-app.use('/downloads', express.static('uploads'));
+// Serve files from both directories
+app.use('/downloads', express.static(downloadsDir));
+app.use('/torrents', express.static(torrentsDir));
 
 // Store download states
 const downloads = new Map();
@@ -57,7 +88,7 @@ try {
     console.error('Error loading download states:', error);
 }
 
-// Run initial cleanup for any expired downloads
+// Run initial cleanup for expired downloads
 cleanupExpiredFiles();
 
 // Save download states periodically
@@ -75,7 +106,6 @@ function cleanupStuckDownloads() {
     for (const [id, download] of downloads.entries()) {
         if (download.state === DOWNLOAD_STATES.DOWNLOADING &&
             now - download.startTime > 60000) { // 1 minute timeout
-            // Auto retry if under max retries
             if (download.retryCount < MAX_RETRIES) {
                 startDownload(id, download.originalUrl);
             } else {
@@ -90,10 +120,9 @@ async function cleanupExpiredFiles() {
     const now = Date.now();
     let hasDeleted = false;
 
-    // Delete expired files and downloads
     for (const [id, download] of downloads.entries()) {
         if (download.expiresAt && now > download.expiresAt) {
-            const filePath = path.join(uploadsDir, download.filename);
+            const filePath = path.join(download.isTorrent ? torrentsDir : downloadsDir, download.filename);
             try {
                 if (fs.existsSync(filePath)) {
                     fs.unlinkSync(filePath);
@@ -107,7 +136,6 @@ async function cleanupExpiredFiles() {
         }
     }
 
-    // Save updates to state file if any deletions occurred
     if (hasDeleted) {
         try {
             fs.writeFileSync(stateFile, JSON.stringify(Object.fromEntries(downloads), null, 2));
@@ -135,7 +163,7 @@ app.delete('/api/downloads/:id', (req, res) => {
         return res.status(403).json({ error: 'Not authorized to delete this download' });
     }
 
-    const filePath = path.join(uploadsDir, download.filename);
+    const filePath = path.join(download.isTorrent ? torrentsDir : downloadsDir, download.filename);
     try {
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
@@ -147,23 +175,6 @@ app.delete('/api/downloads/:id', (req, res) => {
     }
 });
 
-function transformToMirrorUrl(originalUrl) {
-    try {
-        // If URL is already using get.0ms.dev, return it as is
-        if (originalUrl.includes('get.0ms.dev')) {
-            return originalUrl;
-        }
-
-        const urlObj = new URL(originalUrl);
-        // Remove protocol (http:// or https://) and use the rest of the URL
-        const pathWithHost = urlObj.host + urlObj.pathname + urlObj.search;
-        return `https://get.0ms.dev/${pathWithHost}`;
-    } catch (error) {
-        console.error('URL transformation error:', error);
-        return originalUrl;
-    }
-}
-
 async function startDownload(id, url) {
     const download = downloads.get(id);
     if (!download) return;
@@ -172,59 +183,28 @@ async function startDownload(id, url) {
         download.state = DOWNLOAD_STATES.DOWNLOADING;
         download.startTime = Date.now();
 
-        const filePath = path.join(uploadsDir, download.filename);
-        const fileStats = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
-        const downloadedBytes = fileStats ? fileStats.size : 0;
-        download.downloadedBytes = downloadedBytes;
+        const onProgress = (progress) => {
+            download.downloadedBytes = progress.downloadedBytes;
+            download.progress = progress.progress;
+            download.speed = progress.speed;
 
-        const mirrorUrl = transformToMirrorUrl(url);
-        console.log(`Original URL: ${url}`);
-        console.log(`Mirror URL: ${mirrorUrl}`);
-        console.log(`Resuming from byte: ${downloadedBytes}`);
+            // Add torrent-specific info if available
+            if (download.isTorrent) {
+                download.torrentInfo = {
+                    peers: progress.peers,
+                    ratio: progress.ratio,
+                    uploaded: progress.uploaded,
+                    uploadSpeed: progress.uploadSpeed,
+                    timeRemaining: progress.timeRemaining
+                };
+            }
+        };
 
-        const headers = {};
-        if (downloadedBytes > 0) {
-            headers.Range = `bytes=${downloadedBytes}-`;
+        if (download.isTorrent) {
+            await torrentHandler.startDownload(download, onProgress);
+        } else {
+            await httpHandler.startDownload(download, onProgress);
         }
-
-        const response = await axios({
-            method: 'get',
-            url: mirrorUrl,
-            headers,
-            responseType: 'stream',
-            validateStatus: status => (status >= 200 && status < 300) || status === 206,
-            onDownloadProgress: (progressEvent) => {
-                const progress = Math.round(((progressEvent.loaded + downloadedBytes) * 100) / progressEvent.total);
-                download.progress = progress;
-            }
-        });
-
-        const totalSize = parseInt(response.headers['content-length'], 10) + downloadedBytes;
-        let lastTime = Date.now();
-        let lastSize = downloadedBytes;
-
-        const writer = fs.createWriteStream(filePath, { flags: downloadedBytes > 0 ? 'a' : 'w' });
-        response.data.pipe(writer);
-
-        response.data.on('data', (chunk) => {
-            download.downloadedBytes += chunk.length;
-            download.progress = Math.round((download.downloadedBytes * 100) / totalSize);
-
-            // Calculate speed in bytes per second
-            const now = Date.now();
-            const timeDiff = (now - lastTime) / 1000;
-            if (timeDiff >= 1) {
-                const sizeDiff = download.downloadedBytes - lastSize;
-                download.speed = Math.round(sizeDiff / timeDiff);
-                lastTime = now;
-                lastSize = download.downloadedBytes;
-            }
-        });
-
-        await new Promise((resolve, reject) => {
-            writer.on('finish', resolve);
-            writer.on('error', reject);
-        });
 
         download.state = DOWNLOAD_STATES.COMPLETED;
         download.completedAt = Date.now();
@@ -235,12 +215,10 @@ async function startDownload(id, url) {
         download.error = error.message || 'Download failed';
         download.retryCount = (download.retryCount || 0) + 1;
 
-        // Auto retry if under max retries
         if (download.retryCount < MAX_RETRIES) {
             console.log(`Auto retrying download ${id}, attempt ${download.retryCount}`);
-            setTimeout(() => startDownload(id, url), 1000); // Wait 1s before retry
+            setTimeout(() => startDownload(id, url), 1000);
         }
-
         console.error('Download error:', error);
     }
 }
@@ -253,47 +231,16 @@ app.post('/api/download', async (req, res) => {
         }
 
         const id = crypto.randomBytes(8).toString('hex');
-        let originalFilename = 'download';
+        const isTorrent = torrentHandler.isMagnetLink(url);
 
-        try {
-            // First try to get filename from URL path
-            const urlPath = new URL(url).pathname;
-            if (urlPath && urlPath !== '/') {
-                originalFilename = path.basename(urlPath);
-            }
-
-            // Make a HEAD request to get headers without downloading the full file
-            const headResponse = await axios.head(url);
-            const contentType = headResponse.headers['content-type'];
-            const disposition = headResponse.headers['content-disposition'];
-
-            // Try to get filename from content-disposition header
-            if (disposition) {
-                const filenameMatch = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-                if (filenameMatch && filenameMatch[1]) {
-                    // Remove quotes if present
-                    originalFilename = filenameMatch[1].replace(/['"]/g, '');
-                }
-            }
-
-            // If we still don't have a proper extension, try to get it from content-type
-            if (!path.extname(originalFilename) && contentType) {
-                const ext = getExtensionFromMimeType(contentType);
-                if (ext) {
-                    originalFilename = `${originalFilename}${ext}`;
-                }
-            }
-
-            // Special handling for known download services
-            if (url.includes('drive.google.com')) {
-                originalFilename = getGoogleDriveFilename(headResponse.headers, originalFilename);
-            }
-        } catch (error) {
-            console.warn('Error detecting filename:', error);
-            originalFilename = path.basename(new URL(url).pathname) || 'download';
+        let originalFilename;
+        if (isTorrent) {
+            originalFilename = torrentHandler.getNameFromMagnet(url) || 'download';
+        } else {
+            const fileInfo = await httpHandler.getFileInfo(url);
+            originalFilename = fileInfo.filename;
         }
 
-        const now = new Date();
         const randomText = Math.random().toString(36).substring(2, 6).toUpperCase();
         const filename = `NexusDrop_${randomText}-${originalFilename}`;
         const expiresAt = Date.now() + (hours * 60 * 60 * 1000);
@@ -301,7 +248,7 @@ app.post('/api/download', async (req, res) => {
 
         downloads.set(id, {
             id,
-            url: transformToMirrorUrl(url),
+            url: isTorrent ? url : httpHandler.transformToMirrorUrl(url),
             originalUrl: url,
             filename,
             originalFilename,
@@ -311,9 +258,10 @@ app.post('/api/download', async (req, res) => {
             expiresAt,
             error: null,
             ownerId,
-            downloadUrl: DOWNLOADS_BASE_URL + filename,
+            downloadUrl: (isTorrent ? '/torrents/' : DOWNLOADS_BASE_URL) + filename,
             retryCount: 0,
-            downloadedBytes: 0
+            downloadedBytes: 0,
+            isTorrent
         });
 
         startDownload(id, url);
@@ -332,6 +280,25 @@ app.post('/api/download', async (req, res) => {
     }
 });
 
+// Endpoint for uploading torrent files
+app.post('/api/upload/torrent', upload.single('torrent'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No torrent file provided' });
+        }
+
+        const result = await torrentHandler.uploadTorrentFile(req.file);
+        res.json({
+            magnetUri: result.magnetUri,
+            name: result.name,
+            files: result.files
+        });
+    } catch (error) {
+        console.error('Torrent upload error:', error);
+        res.status(500).json({ error: 'Failed to process torrent file' });
+    }
+});
+
 app.post('/api/download/:id/retry', async (req, res) => {
     const { id } = req.params;
     const { ownerId } = req.body;
@@ -345,9 +312,7 @@ app.post('/api/download/:id/retry', async (req, res) => {
         return res.status(403).json({ error: 'Not authorized to retry this download' });
     }
 
-    // Reset retry count for manual retry
     download.retryCount = 0;
-
     startDownload(id, download.originalUrl);
     res.json({
         message: 'Download retry initiated',
@@ -357,7 +322,8 @@ app.post('/api/download/:id/retry', async (req, res) => {
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
-    console.log(`Files will be stored in: ${uploadsDir}`);
+    console.log(`Regular downloads will be stored in: ${downloadsDir}`);
+    console.log(`Torrent downloads will be stored in: ${torrentsDir}`);
 });
 
 process.on('SIGINT', () => {

@@ -65,3 +65,4 @@ class NotificationSystem {
 }
 
 const notifications = new NotificationSystem();
+export { notifications };

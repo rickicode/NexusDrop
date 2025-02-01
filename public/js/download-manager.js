@@ -1,4 +1,9 @@
-class DownloadManager {
+import { formatSpeed, formatSize, formatTimeLeft, formatTimeRemaining } from './formatters.js';
+import { notifications } from '../notifications.js';
+import { TorrentUploader } from './torrent-upload.js';
+import { VideoPlayer } from './video-player.js';
+
+export class DownloadManager {
     constructor() {
         this.form = document.getElementById('downloadForm');
         this.urlInput = document.getElementById('urlInput');
@@ -6,9 +11,13 @@ class DownloadManager {
         this.downloadsList = document.getElementById('downloadsList');
         this.downloads = new Map();
         this.ownedDownloads = new Map(JSON.parse(localStorage.getItem('ownedDownloads') || '[]'));
-        this.previousProgress = new Map();
-        this.lastUpdateTime = new Map();
-        this.videoPlayer = null;
+
+        // Initialize components
+        this.videoPlayer = new VideoPlayer();
+        this.torrentUploader = new TorrentUploader(
+            document.getElementById('torrentUploadForm'),
+            this.urlInput
+        );
 
         this.initEventListeners();
         this.loadDownloads();
@@ -70,27 +79,6 @@ class DownloadManager {
         setInterval(() => this.loadDownloads(), 1000);
     }
 
-    formatTimeLeft(expiresAt) {
-        const now = Date.now();
-        const timeLeft = new Date(expiresAt) - now;
-
-        if (timeLeft <= 0) return 'Expired';
-
-        const hours = Math.floor(timeLeft / (1000 * 60 * 60));
-        const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-
-        if (hours > 24) {
-            const days = Math.floor(hours / 24);
-            return `${days} day${days !== 1 ? 's' : ''} left`;
-        }
-
-        if (hours > 0) {
-            return `${hours} hour${hours !== 1 ? 's' : ''} ${minutes} min left`;
-        }
-
-        return `${minutes} minutes left`;
-    }
-
     async handleSubmit(e) {
         e.preventDefault();
         const url = this.urlInput.value.trim();
@@ -136,8 +124,8 @@ class DownloadManager {
         const download = this.downloads.get(id);
         const ownerId = this.ownedDownloads.get(id);
 
-        if (button.dataset.action === 'play') {
-            this.openVideoPlayer(download);
+        if (button.dataset.action === 'play' && this.videoPlayer.isVideoFile(download.originalFilename)) {
+            this.videoPlayer.playVideo(download);
             return;
         }
 
@@ -175,67 +163,11 @@ class DownloadManager {
         }
     }
 
-    isVideoFile(filename) {
-        const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv'];
-        return videoExtensions.some(ext => filename.toLowerCase().endsWith(ext));
-    }
-
-    openVideoPlayer(download) {
-        const modal = document.getElementById('videoModal');
-        const closeBtn = modal.querySelector('.close');
-        const videoElement = document.getElementById('videoPlayer');
-
-        // Reset video player if it exists
-        if (this.videoPlayer) {
-            this.videoPlayer.dispose();
-        }
-
-        // Initialize video.js
-        this.videoPlayer = videojs('videoPlayer', {
-            controls: true,
-            autoplay: false,
-            preload: 'auto',
-            fluid: true,
-            aspectRatio: '16:9'
-        });
-
-        // Set video source based on download state
-        this.videoPlayer.src({
-            type: 'video/mp4', // Default to mp4, browser will handle other formats
-            src: download.state === 'completed' ? `/downloads/${download.filename}` : download.url
-        });
-
-        // Show modal
-        modal.style.display = 'block';
-
-        // Close modal event
-        const closeModal = () => {
-            modal.style.display = 'none';
-            if (this.videoPlayer) {
-                this.videoPlayer.pause();
-            }
-        };
-
-        closeBtn.onclick = closeModal;
-        modal.onclick = (e) => {
-            if (e.target === modal) {
-                closeModal();
-            }
-        };
-
-        // Handle ESC key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-        });
-    }
-
     renderDownloadActions(download, isOwner) {
         let actions = '';
 
         // Show play button for video files in any state
-        if (this.isVideoFile(download.originalFilename)) {
+        if (this.videoPlayer.isVideoFile(download.originalFilename)) {
             actions += `
                 <button class="btn btn-small" data-action="play">
                     <i class="fas fa-play"></i> Play
@@ -255,7 +187,7 @@ class DownloadManager {
         if (download.state === 'error' && isOwner && download.retryCount >= 7) {
             actions += `
                 <button class="btn btn-small btn-retry" data-action="retry">
-                    <i class="fas fa-redo"></i> Retry (Auto-retry failed)
+                    <i class="fas fa-redo"></i> Retry
                 </button>
             `;
         }
@@ -269,6 +201,21 @@ class DownloadManager {
         }
 
         return actions;
+    }
+
+    renderTorrentInfo(download) {
+        if (!download.isTorrent || !download.torrentInfo) return '';
+
+        const { peers, ratio, uploaded, uploadSpeed, timeRemaining } = download.torrentInfo;
+
+        return `
+            <div class="torrent-info">
+                <div><i class="fas fa-users"></i> ${peers} peers</div>
+                <div><i class="fas fa-exchange-alt"></i> Ratio: ${ratio.toFixed(2)}</div>
+                <div><i class="fas fa-upload"></i> ${formatSize(uploaded)} (${formatSpeed(uploadSpeed)})</div>
+                <div><i class="fas fa-clock"></i> ETA: ${formatTimeRemaining(timeRemaining)}</div>
+            </div>
+        `;
     }
 
     renderDownloads() {
@@ -304,25 +251,31 @@ class DownloadManager {
             }[download.state];
 
             if (download.state === 'downloading' && download.speed !== undefined) {
-                const speedMBps = (download.speed / (1024 * 1024)).toFixed(2);
-                statusText += ` - ${speedMBps} MB/s`;
+                statusText += ` - ${formatSpeed(download.speed)}`;
             }
 
             const isOwner = this.ownedDownloads.has(download.id);
-            const timeLeft = this.formatTimeLeft(download.expiresAt);
+            const timeLeft = formatTimeLeft(download.expiresAt);
+
+            const torrentBadge = download.isTorrent ?
+                '<span class="torrent-badge"><i class="fas fa-magnet"></i> Torrent</span>' : '';
 
             item.innerHTML = `
-                <div class="url"><a href="${download.url}" target="_blank">${download.originalFilename}</a></div>
+                <div class="url">
+                    ${torrentBadge}
+                    <a href="${download.url}" target="_blank">${download.originalFilename}</a>
+                </div>
                 <div class="status">
                     ${download.state === 'downloading' ?
                     `<div class="download-progress">
-                            <div class="progress-bar" style="width: ${download.progress}%"></div>
-                        </div>` : ''}
+                        <div class="progress-bar" style="width: ${download.progress}%"></div>
+                    </div>` : ''}
                     <span class="status-text ${statusClass}">
                         ${download.state === 'downloading' ? `<span class="loading-spinner"></span>` : ''}
                         ${statusText}
                     </span>
                 </div>
+                ${download.isTorrent ? this.renderTorrentInfo(download) : ''}
                 <div class="download-meta">
                     <div class="download-actions">
                         ${this.renderDownloadActions(download, isOwner)}
@@ -337,6 +290,3 @@ class DownloadManager {
         });
     }
 }
-
-// Initialize the download manager when the page loads
-new DownloadManager();
