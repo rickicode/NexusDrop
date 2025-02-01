@@ -6,6 +6,8 @@ class DownloadManager {
         this.downloadsList = document.getElementById('downloadsList');
         this.downloads = new Map();
         this.ownedDownloads = new Map(JSON.parse(localStorage.getItem('ownedDownloads') || '[]'));
+        this.previousProgress = new Map();
+        this.lastUpdateTime = new Map();
 
         this.initEventListeners();
         this.loadDownloads();
@@ -24,12 +26,52 @@ class DownloadManager {
 
             this.downloads.clear();
             Object.entries(data).forEach(([id, download]) => {
+                // Calculate download speed if downloading
+                if (download.state === 'downloading') {
+                    const prevProgress = this.previousProgress.get(id) || 0;
+                    const lastUpdate = this.lastUpdateTime.get(id) || Date.now();
+                    const timeDiff = (Date.now() - lastUpdate) / 1000; // Convert to seconds
+
+                    if (timeDiff > 0) {
+                        const progressDiff = download.progress - prevProgress;
+                        download.speed = Math.round((progressDiff / timeDiff) * 100) / 100; // % per second
+                    }
+
+                    this.previousProgress.set(id, download.progress);
+                    this.lastUpdateTime.set(id, Date.now());
+                } else {
+                    // Clean up tracking for completed/failed downloads
+                    this.previousProgress.delete(id);
+                    this.lastUpdateTime.delete(id);
+                }
+
                 this.downloads.set(id, download);
+
+                // Show notifications for state changes
+                const prevDownload = this.downloads.get(id);
+                if (prevDownload && prevDownload.state !== download.state) {
+                    this.showStateChangeNotification(download);
+                }
             });
 
             this.renderDownloads();
         } catch (error) {
             console.error('Failed to load downloads:', error);
+            notifications.error('Failed to load downloads');
+        }
+    }
+
+    showStateChangeNotification(download) {
+        switch (download.state) {
+            case 'completed':
+                notifications.success('Download completed successfully');
+                break;
+            case 'error':
+                notifications.error(download.error || 'Download failed');
+                break;
+            case 'downloading':
+                notifications.info('Download started');
+                break;
         }
     }
 
@@ -81,12 +123,17 @@ class DownloadManager {
                 error: 'status-error'
             }[download.state];
 
-            const statusText = {
+            let statusText = {
                 pending: 'Pending...',
                 downloading: `Downloading (${download.progress}%)`,
                 completed: 'Completed',
                 error: download.error || 'Failed'
             }[download.state];
+
+            // Add speed information if downloading
+            if (download.state === 'downloading' && download.speed !== undefined) {
+                statusText += ` - ${download.speed}%/s`;
+            }
 
             const isOwner = this.ownedDownloads.has(download.id);
             const timeLeft = this.formatTimeLeft(download.expiresAt);
@@ -106,7 +153,7 @@ class DownloadManager {
                 <div class="download-meta">
                     <div class="download-actions">
                         ${download.state === 'completed' ?
-                    `<a href="/downloads/${download.filename}" class="btn btn-small" download>
+                    `<a href="${download.url}" class="btn btn-small" download>
                                 <i class="fas fa-download"></i> Download
                             </a>` : ''}
                         ${download.state === 'error' && isOwner ?
@@ -154,10 +201,12 @@ class DownloadManager {
             this.ownedDownloads.set(id, ownerId);
             localStorage.setItem('ownedDownloads', JSON.stringify([...this.ownedDownloads]));
 
+            notifications.success('Download request submitted successfully');
             this.urlInput.value = '';
             await this.loadDownloads();
         } catch (error) {
             console.error('Download error:', error);
+            notifications.error('Failed to start download. Please try again.');
         }
     }
 
@@ -192,9 +241,15 @@ class DownloadManager {
                     body: JSON.stringify({ ownerId })
                 });
             }
+            if (action === 'delete') {
+                notifications.info('Download deleted successfully');
+            } else if (action === 'retry') {
+                notifications.info('Download retry initiated');
+            }
             await this.loadDownloads();
         } catch (error) {
             console.error('Action failed:', error);
+            notifications.error(`Failed to ${action} download. Please try again.`);
         }
     }
 }

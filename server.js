@@ -191,14 +191,64 @@ app.post('/api/download', async (req, res) => {
         }
 
         const id = crypto.randomBytes(8).toString('hex');
-        const originalFilename = path.basename(new URL(url).pathname) || 'download';
-        const filename = `${id}-${originalFilename}`;
+        let originalFilename = 'download';
+
+        try {
+            // First try to get filename from URL path
+            const urlPath = new URL(url).pathname;
+            if (urlPath && urlPath !== '/') {
+                originalFilename = path.basename(urlPath);
+            }
+
+            // Make a HEAD request to get headers without downloading the full file
+            const headResponse = await axios.head(url);
+            const contentType = headResponse.headers['content-type'];
+            const disposition = headResponse.headers['content-disposition'];
+
+            // Try to get filename from content-disposition header
+            if (disposition) {
+                const filenameMatch = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                if (filenameMatch && filenameMatch[1]) {
+                    // Remove quotes if present
+                    originalFilename = filenameMatch[1].replace(/['"]/g, '');
+                }
+            }
+
+            // If we still don't have a proper extension, try to get it from content-type
+            if (!path.extname(originalFilename) && contentType) {
+                const ext = getExtensionFromMimeType(contentType);
+                if (ext) {
+                    originalFilename = `${originalFilename}${ext}`;
+                }
+            }
+
+            // Special handling for known download services
+            if (url.includes('drive.google.com')) {
+                originalFilename = getGoogleDriveFilename(headResponse.headers, originalFilename);
+            }
+            // Add more special cases here for other services
+        } catch (error) {
+            console.warn('Error detecting filename:', error);
+            // Fallback to URL basename or 'download' if that fails
+            originalFilename = path.basename(new URL(url).pathname) || 'download';
+        }
+
+        // Generate timestamp-based prefix
+        const now = new Date();
+        const timestamp = now.toLocaleString('id-ID', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        }).replace(/:/g, '');
+
+        const filename = `NexusDrop_${timestamp}-${originalFilename}`;
         const expiresAt = Date.now() + (hours * 60 * 60 * 1000);
         const ownerId = crypto.randomBytes(16).toString('hex');
 
         downloads.set(id, {
             id,
-            url,
+            url: transformToMirrorUrl(url),
             filename,
             originalFilename,
             state: DOWNLOAD_STATES.PENDING,
@@ -246,6 +296,100 @@ app.post('/api/download/:id/retry', async (req, res) => {
         expiresAt: new Date(download.expiresAt).toISOString()
     });
 });
+
+// Helper function to get file extension from mime type
+function getExtensionFromMimeType(mimeType) {
+    const mimeToExt = {
+        // Archives
+        'application/zip': '.zip',
+        'application/x-zip-compressed': '.zip',
+        'application/x-rar-compressed': '.rar',
+        'application/x-7z-compressed': '.7z',
+        'application/x-ace-compressed': '.ace',
+        'application/x-arj': '.arj',
+        'application/x-sea': '.sea',
+        'application/x-tar': '.tar',
+        'application/x-gzip': '.gz',
+        'application/gzip': '.gzip',
+        'application/x-bzip2': '.bz2',
+        'application/x-lzh': '.lzh',
+        'application/x-sit': '.sit',
+        'application/x-sitx': '.sitx',
+        'application/x-z-compressed': '.z',
+
+        // Executables
+        'application/x-msdownload': '.exe',
+        'application/x-msi': '.msi',
+        'application/x-msu': '.msu',
+
+        // Images
+        'application/x-iso9660-image': '.iso',
+        'image/tiff': '.tif',
+        'image/x-tiff': '.tiff',
+        'application/x-raw-disk-image': '.img',
+        'application/x-xz': '.img.xz',
+
+        // Audio
+        'audio/aac': '.aac',
+        'audio/x-aiff': '.aif',
+        'audio/mpeg': '.mp3',
+        'audio/mp4': '.m4a',
+        'audio/x-realaudio': '.ra',
+        'audio/x-pn-realaudio': '.rm',
+        'audio/wav': '.wav',
+        'audio/x-ms-wma': '.wma',
+        'audio/ogg': '.ogg',
+
+        // Video
+        'video/x-ms-asf': '.asf',
+        'video/x-msvideo': '.avi',
+        'video/mp4': '.mp4',
+        'video/x-matroska': '.mkv',
+        'video/quicktime': '.mov',
+        'video/x-m4v': '.m4v',
+        'video/mpeg': '.mpeg',
+        'video/mpg': '.mpg',
+        'video/x-mpeg': '.mpe',
+        'video/ogg': '.ogv',
+        'video/x-realvideo': '.rmvb',
+        'video/x-ms-wmv': '.wmv',
+
+        // Documents
+        'application/pdf': '.pdf',
+        'application/vnd.ms-powerpoint': '.ppt',
+        'application/vnd.ms-powerpoint.presentation.macroEnabled.12': '.pps',
+        'application/vnd.ms-powerpoint.slideshow.macroEnabled.12': '.pps',
+
+        // Android Package
+        'application/vnd.android.package-archive': '.apk',
+
+        // Binary
+        'application/octet-stream': '.bin',
+
+        // Additional formats from R0* to R1*
+        'application/x-r0': '.r00',
+        'application/x-r1': '.r01',
+        'application/x-r2': '.r02',
+        'application/x-r3': '.r03',
+        'application/x-r4': '.r04',
+        'application/x-r5': '.r05',
+        'application/x-plj': '.plj'
+    };
+    return mimeToExt[mimeType] || '';
+}
+
+// Helper function to handle Google Drive files
+function getGoogleDriveFilename(headers, fallbackName) {
+    // Google Drive specific logic
+    const contentType = headers['content-type'];
+    if (contentType && !path.extname(fallbackName)) {
+        const ext = getExtensionFromMimeType(contentType);
+        if (ext) {
+            return `${fallbackName}${ext}`;
+        }
+    }
+    return fallbackName;
+}
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
