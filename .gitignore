@@ -1,5 +1,4 @@
-/uploads/*
-nodemodules/
+uploads/*
 node_modules/
 .env
 .env.test
