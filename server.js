@@ -1,6 +1,7 @@
 import express from 'express';
 import axios from 'axios';
 import path from 'path';
+import dotenv from 'dotenv';
 import fs from 'fs';
 import crypto from 'crypto';
 import schedule from 'node-schedule';
@@ -9,8 +10,11 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Load environment variables
+dotenv.config();
+
 const app = express();
-const port = 3001;
+const port = process.env.PORT || 3001;
 
 // Create necessary directories
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -35,6 +39,8 @@ const DOWNLOAD_STATES = {
     ERROR: 'error'
 };
 
+const MAX_RETRIES = 7;
+
 // Configure downloads URL prefix
 const DOWNLOADS_BASE_URL = '/downloads/';
 
@@ -51,6 +57,9 @@ try {
     console.error('Error loading download states:', error);
 }
 
+// Run initial cleanup for any expired downloads
+cleanupExpiredFiles();
+
 // Save download states periodically
 setInterval(() => {
     const data = Object.fromEntries(downloads);
@@ -66,14 +75,22 @@ function cleanupStuckDownloads() {
     for (const [id, download] of downloads.entries()) {
         if (download.state === DOWNLOAD_STATES.DOWNLOADING &&
             now - download.startTime > 60000) { // 1 minute timeout
-            download.state = DOWNLOAD_STATES.ERROR;
-            download.error = 'Download timed out';
+            // Auto retry if under max retries
+            if (download.retryCount < MAX_RETRIES) {
+                startDownload(id, download.originalUrl);
+            } else {
+                download.state = DOWNLOAD_STATES.ERROR;
+                download.error = 'Download timed out';
+            }
         }
     }
 }
 
-function cleanupExpiredFiles() {
+async function cleanupExpiredFiles() {
     const now = Date.now();
+    let hasDeleted = false;
+
+    // Delete expired files and downloads
     for (const [id, download] of downloads.entries()) {
         if (download.expiresAt && now > download.expiresAt) {
             const filePath = path.join(uploadsDir, download.filename);
@@ -83,9 +100,20 @@ function cleanupExpiredFiles() {
                 }
                 downloads.delete(id);
                 console.log(`Deleted expired file: ${download.filename}`);
+                hasDeleted = true;
             } catch (error) {
                 console.error(`Error deleting file ${download.filename}:`, error);
             }
+        }
+    }
+
+    // Save updates to state file if any deletions occurred
+    if (hasDeleted) {
+        try {
+            fs.writeFileSync(stateFile, JSON.stringify(Object.fromEntries(downloads), null, 2));
+            console.log('Updated downloads state after cleanup');
+        } catch (error) {
+            console.error('Error saving downloads state:', error);
         }
     }
 }
@@ -143,42 +171,53 @@ async function startDownload(id, url) {
     try {
         download.state = DOWNLOAD_STATES.DOWNLOADING;
         download.startTime = Date.now();
-        download.progress = 0;
+
+        const filePath = path.join(uploadsDir, download.filename);
+        const fileStats = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
+        const downloadedBytes = fileStats ? fileStats.size : 0;
+        download.downloadedBytes = downloadedBytes;
 
         const mirrorUrl = transformToMirrorUrl(url);
         console.log(`Original URL: ${url}`);
         console.log(`Mirror URL: ${mirrorUrl}`);
+        console.log(`Resuming from byte: ${downloadedBytes}`);
+
+        const headers = {};
+        if (downloadedBytes > 0) {
+            headers.Range = `bytes=${downloadedBytes}-`;
+        }
 
         const response = await axios({
             method: 'get',
             url: mirrorUrl,
+            headers,
             responseType: 'stream',
+            validateStatus: status => (status >= 200 && status < 300) || status === 206,
             onDownloadProgress: (progressEvent) => {
-                const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                const progress = Math.round(((progressEvent.loaded + downloadedBytes) * 100) / progressEvent.total);
                 download.progress = progress;
             }
         });
 
-        const totalSize = parseInt(response.headers['content-length'], 10);
-        let downloadedSize = 0;
+        const totalSize = parseInt(response.headers['content-length'], 10) + downloadedBytes;
         let lastTime = Date.now();
-        let lastSize = 0;
+        let lastSize = downloadedBytes;
 
-        const writer = fs.createWriteStream(path.join(uploadsDir, download.filename));
+        const writer = fs.createWriteStream(filePath, { flags: downloadedBytes > 0 ? 'a' : 'w' });
         response.data.pipe(writer);
 
         response.data.on('data', (chunk) => {
-            downloadedSize += chunk.length;
-            download.progress = Math.round((downloadedSize * 100) / totalSize);
+            download.downloadedBytes += chunk.length;
+            download.progress = Math.round((download.downloadedBytes * 100) / totalSize);
 
             // Calculate speed in bytes per second
             const now = Date.now();
-            const timeDiff = (now - lastTime) / 1000; // Convert to seconds
-            if (timeDiff >= 1) { // Update speed every second
-                const sizeDiff = downloadedSize - lastSize;
-                download.speed = Math.round(sizeDiff / timeDiff); // bytes per second
+            const timeDiff = (now - lastTime) / 1000;
+            if (timeDiff >= 1) {
+                const sizeDiff = download.downloadedBytes - lastSize;
+                download.speed = Math.round(sizeDiff / timeDiff);
                 lastTime = now;
-                lastSize = downloadedSize;
+                lastSize = download.downloadedBytes;
             }
         });
 
@@ -194,6 +233,14 @@ async function startDownload(id, url) {
     } catch (error) {
         download.state = DOWNLOAD_STATES.ERROR;
         download.error = error.message || 'Download failed';
+        download.retryCount = (download.retryCount || 0) + 1;
+
+        // Auto retry if under max retries
+        if (download.retryCount < MAX_RETRIES) {
+            console.log(`Auto retrying download ${id}, attempt ${download.retryCount}`);
+            setTimeout(() => startDownload(id, url), 1000); // Wait 1s before retry
+        }
+
         console.error('Download error:', error);
     }
 }
@@ -241,17 +288,13 @@ app.post('/api/download', async (req, res) => {
             if (url.includes('drive.google.com')) {
                 originalFilename = getGoogleDriveFilename(headResponse.headers, originalFilename);
             }
-            // Add more special cases here for other services
         } catch (error) {
             console.warn('Error detecting filename:', error);
-            // Fallback to URL basename or 'download' if that fails
             originalFilename = path.basename(new URL(url).pathname) || 'download';
         }
 
-        // Generate timestamp-based prefix
         const now = new Date();
         const randomText = Math.random().toString(36).substring(2, 6).toUpperCase();
-
         const filename = `NexusDrop_${randomText}-${originalFilename}`;
         const expiresAt = Date.now() + (hours * 60 * 60 * 1000);
         const ownerId = crypto.randomBytes(16).toString('hex');
@@ -268,10 +311,11 @@ app.post('/api/download', async (req, res) => {
             expiresAt,
             error: null,
             ownerId,
-            downloadUrl: DOWNLOADS_BASE_URL + filename
+            downloadUrl: DOWNLOADS_BASE_URL + filename,
+            retryCount: 0,
+            downloadedBytes: 0
         });
 
-        // Start download process
         startDownload(id, url);
 
         res.json({
@@ -301,114 +345,21 @@ app.post('/api/download/:id/retry', async (req, res) => {
         return res.status(403).json({ error: 'Not authorized to retry this download' });
     }
 
-    // Start new download
-    startDownload(id, download.url);
+    // Reset retry count for manual retry
+    download.retryCount = 0;
+
+    startDownload(id, download.originalUrl);
     res.json({
         message: 'Download retry initiated',
         expiresAt: new Date(download.expiresAt).toISOString()
     });
 });
 
-// Helper function to get file extension from mime type
-function getExtensionFromMimeType(mimeType) {
-    const mimeToExt = {
-        // Archives
-        'application/zip': '.zip',
-        'application/x-zip-compressed': '.zip',
-        'application/x-rar-compressed': '.rar',
-        'application/x-7z-compressed': '.7z',
-        'application/x-ace-compressed': '.ace',
-        'application/x-arj': '.arj',
-        'application/x-sea': '.sea',
-        'application/x-tar': '.tar',
-        'application/x-gzip': '.gz',
-        'application/gzip': '.gzip',
-        'application/x-bzip2': '.bz2',
-        'application/x-lzh': '.lzh',
-        'application/x-sit': '.sit',
-        'application/x-sitx': '.sitx',
-        'application/x-z-compressed': '.z',
-
-        // Executables
-        'application/x-msdownload': '.exe',
-        'application/x-msi': '.msi',
-        'application/x-msu': '.msu',
-
-        // Images
-        'application/x-iso9660-image': '.iso',
-        'image/tiff': '.tif',
-        'image/x-tiff': '.tiff',
-        'application/x-raw-disk-image': '.img',
-        'application/x-xz': '.img.xz',
-
-        // Audio
-        'audio/aac': '.aac',
-        'audio/x-aiff': '.aif',
-        'audio/mpeg': '.mp3',
-        'audio/mp4': '.m4a',
-        'audio/x-realaudio': '.ra',
-        'audio/x-pn-realaudio': '.rm',
-        'audio/wav': '.wav',
-        'audio/x-ms-wma': '.wma',
-        'audio/ogg': '.ogg',
-
-        // Video
-        'video/x-ms-asf': '.asf',
-        'video/x-msvideo': '.avi',
-        'video/mp4': '.mp4',
-        'video/x-matroska': '.mkv',
-        'video/quicktime': '.mov',
-        'video/x-m4v': '.m4v',
-        'video/mpeg': '.mpeg',
-        'video/mpg': '.mpg',
-        'video/x-mpeg': '.mpe',
-        'video/ogg': '.ogv',
-        'video/x-realvideo': '.rmvb',
-        'video/x-ms-wmv': '.wmv',
-
-        // Documents
-        'application/pdf': '.pdf',
-        'application/vnd.ms-powerpoint': '.ppt',
-        'application/vnd.ms-powerpoint.presentation.macroEnabled.12': '.pps',
-        'application/vnd.ms-powerpoint.slideshow.macroEnabled.12': '.pps',
-
-        // Android Package
-        'application/vnd.android.package-archive': '.apk',
-
-        // Binary
-        'application/octet-stream': '.bin',
-
-        // Additional formats from R0* to R1*
-        'application/x-r0': '.r00',
-        'application/x-r1': '.r01',
-        'application/x-r2': '.r02',
-        'application/x-r3': '.r03',
-        'application/x-r4': '.r04',
-        'application/x-r5': '.r05',
-        'application/x-plj': '.plj'
-    };
-    return mimeToExt[mimeType] || '';
-}
-
-// Helper function to handle Google Drive files
-function getGoogleDriveFilename(headers, fallbackName) {
-    // Google Drive specific logic
-    const contentType = headers['content-type'];
-    if (contentType && !path.extname(fallbackName)) {
-        const ext = getExtensionFromMimeType(contentType);
-        if (ext) {
-            return `${fallbackName}${ext}`;
-        }
-    }
-    return fallbackName;
-}
-
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
     console.log(`Files will be stored in: ${uploadsDir}`);
 });
 
-// Handle cleanup on server shutdown
 process.on('SIGINT', () => {
     console.log('Server shutting down...');
     fs.writeFileSync(stateFile, JSON.stringify(Object.fromEntries(downloads), null, 2));

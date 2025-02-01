@@ -24,6 +24,15 @@ class DownloadManager {
             const response = await fetch('/api/downloads');
             const data = await response.json();
 
+            // Clean up expired downloads from localStorage
+            const now = Date.now();
+            for (const [id, download] of Object.entries(data)) {
+                if (download.expiresAt <= now) {
+                    this.ownedDownloads.delete(id);
+                }
+            }
+            localStorage.setItem('ownedDownloads', JSON.stringify([...this.ownedDownloads]));
+
             this.downloads.clear();
             Object.entries(data).forEach(([id, download]) => {
                 this.downloads.set(id, download);
@@ -89,7 +98,9 @@ class DownloadManager {
             return;
         }
 
+        const now = Date.now();
         const sortedDownloads = Array.from(this.downloads.values())
+            .filter(download => download.expiresAt > now)
             .sort((a, b) => b.createdAt - a.createdAt);
 
         sortedDownloads.forEach(download => {
@@ -122,7 +133,7 @@ class DownloadManager {
             const timeLeft = this.formatTimeLeft(download.expiresAt);
 
             item.innerHTML = `
-                <div class="url"><a href="${download.url}" target="_blank">${download.url}</a></div>
+                <div class="url"><a href="${download.url}" target="_blank">${download.originalFilename}</a></div>
                 <div class="status">
                     ${download.state === 'downloading' ?
                     `<div class="download-progress">
@@ -139,9 +150,9 @@ class DownloadManager {
                     `<a href="/downloads/${download.filename}" class="btn btn-small" download>
                                 <i class="fas fa-download"></i> Download
                             </a>` : ''}
-                        ${download.state === 'error' && isOwner ?
+                        ${download.state === 'error' && isOwner && download.retryCount >= 7 ?
                     `<button class="btn btn-small btn-retry" data-action="retry">
-                                <i class="fas fa-redo"></i> Retry
+                                <i class="fas fa-redo"></i> Retry (Auto-retry failed)
                             </button>` : ''}
                         ${isOwner ?
                     `<button class="btn btn-small btn-delete" data-action="delete">
