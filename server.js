@@ -253,6 +253,31 @@ async function startDownload(id, url) {
         download.error = error.message || 'Download failed';
         download.retryCount = (download.retryCount || 0) + 1;
 
+        if (error.message === 'A torrent with the same id is already being seeded') {
+            // Find the duplicate download by URL and delete it
+            for (const [otherId, otherDownload] of downloads.entries()) {
+                if (otherId !== id && otherDownload.originalUrl === download.originalUrl) {
+                    if (otherDownload.state === DOWNLOAD_STATES.ERROR || otherDownload.state === DOWNLOAD_STATES.COMPLETED) {
+                        // Delete the duplicate and try again
+                        const filePath = path.join(torrentsDir, otherDownload.filename);
+                        try {
+                            if (fs.existsSync(filePath)) {
+                                fs.unlinkSync(filePath);
+                            }
+                            downloads.delete(otherId);
+                            console.log(`Deleted duplicate torrent: ${otherDownload.filename}`);
+                            // Try download again after short delay
+                            setTimeout(() => startDownload(id, url), 1000);
+                            return;
+                        } catch (err) {
+                            console.error('Error deleting duplicate:', err);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Regular retry logic for other errors
         if (download.retryCount < MAX_RETRIES) {
             console.log(`Auto retrying download ${id}, attempt ${download.retryCount}`);
             setTimeout(() => startDownload(id, url), 1000);
@@ -312,8 +337,9 @@ app.post('/api/download', async (req, res) => {
 
     } catch (error) {
         console.error('Download error:', error);
-        res.status(500).json({
-            error: 'Failed to start download: ' + (error.message || 'Unknown error')
+        const statusCode = error.message === 'Cannot add duplicate torrent' ? 400 : 500;
+        res.status(statusCode).json({
+            error: error.message || 'Failed to start download'
         });
     }
 });
@@ -325,7 +351,10 @@ app.post('/api/upload/torrent', upload.single('torrent'), async (req, res) => {
             return res.status(400).json({ error: 'No torrent file provided' });
         }
 
-        const result = await torrentHandler.uploadTorrentFile(req.file);
+        const result = await torrentHandler.uploadTorrentFile({
+            buffer: req.file.buffer,
+            originalname: req.file.originalname
+        });
         res.json({
             magnetUri: result.magnetUri,
             name: result.name,

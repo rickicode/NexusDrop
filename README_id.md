@@ -56,7 +56,19 @@ Status: Dukungan deployment cloud sedang dalam pengembangan. Untuk saat ini, sil
    npm install
    ```
 
-3. **Jalankan Server:**
+3. **Konfigurasi Environment:**
+
+   Buat file `.env` berdasarkan `.env.example` yang disediakan:
+   ```bash
+   cp .env.example .env
+   ```
+
+   Variabel environment yang tersedia:
+   - `PORT`: Port server (default: 3001)
+   - `PATH_DOWNLOAD`: Direktori untuk file yang diunduh (default: uploads)
+   - `PATH_TORRENT`: Direktori untuk file torrent (default: uploads/torrents)
+
+4. **Jalankan Server:**
 
    Mulai server dengan menjalankan:
 

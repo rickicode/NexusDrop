@@ -56,7 +56,19 @@ Status: Cloud deployment support is currently under development. For now, please
    npm install
    ```
 
-3. **Run the Server:**
+3. **Configure Environment:**
+
+   Create a `.env` file based on the provided `.env.example`:
+   ```bash
+   cp .env.example .env
+   ```
+
+   Available environment variables:
+   - `PORT`: Server port (default: 3001)
+   - `PATH_DOWNLOAD`: Directory for downloaded files (default: uploads)
+   - `PATH_TORRENT`: Directory for torrent files (default: uploads/torrents)
+
+4. **Run the Server:**
 
    Start the server by running:
 

@@ -67,7 +67,11 @@ export class DownloadManager {
                 notifications.success('Download completed successfully');
                 break;
             case 'error':
-                notifications.error(download.error || 'Download failed');
+                if (download.error === 'A torrent with the same id is already being seeded') {
+                    notifications.info('Removing duplicate torrent and retrying download...');
+                } else {
+                    notifications.error(download.error || 'Download failed');
+                }
                 break;
             case 'downloading':
                 notifications.info('Download started');
@@ -110,7 +114,11 @@ export class DownloadManager {
             await this.loadDownloads();
         } catch (error) {
             console.error('Download error:', error);
-            notifications.error('Failed to start download. Please try again.');
+            let errorMessage = 'Failed to start download. Please try again.';
+            if (error.response && error.response.data && error.response.data.error) {
+                errorMessage = error.response.data.error;
+            }
+            notifications.error(errorMessage);
         }
     }
 
@@ -219,7 +227,8 @@ export class DownloadManager {
             `;
         }
 
-        if (download.state === 'error' && isOwner && download.retryCount >= 7) {
+        // For error state with retry option
+        if (download.state === 'error' && isOwner && download.retryCount < 7) {
             actions += `
                 <button class="btn btn-small btn-retry" data-action="retry">
                     <i class="fas fa-redo"></i> Retry

@@ -33,13 +33,10 @@ class TorrentHandler {
             const existingInfoHash = this.magnetUrls.get(download.originalUrl);
             const existingTorrent = existingInfoHash ? this.activeTorrents.get(existingInfoHash) : null;
 
-            // Remove existing torrent if it exists
-            if (existingInfoHash) {
-                this.removeTorrent(existingInfoHash);
+            // If torrent is already being downloaded, return error
+            if (existingTorrent) {
+                throw new Error('A torrent with the same id is already being seeded');
             }
-
-            // Clear any existing mapping for this magnet URL
-            this.magnetUrls.delete(download.originalUrl);
 
             const torrent = this.client.add(download.originalUrl, { path: this.uploadsDir });
             this.activeTorrents.set(torrent.infoHash, torrent);
