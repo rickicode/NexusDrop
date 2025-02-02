@@ -337,9 +337,8 @@ app.post('/api/download', async (req, res) => {
 
     } catch (error) {
         console.error('Download error:', error);
-        const statusCode = error.message === 'Cannot add duplicate torrent' ? 400 : 500;
-        res.status(statusCode).json({
-            error: error.message || 'Failed to start download'
+        res.status(500).json({
+            error: 'Failed to start download: ' + error.message
         });
     }
 });
